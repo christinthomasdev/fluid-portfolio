@@ -233,6 +233,31 @@ Five agents — four student-facing and one background worker. The split between
 
 The third module is the most ambitious test of the platform thesis: **Product Studio**, a full product team inside Fluid that takes one product idea to a shipped, working web app. Seven agents: a **Product Manager** writes the spec (with a named target user and a differentiation contract — no "a fun app for everyone" specs allowed) → an optional user **"Approve spec" gate** → **Tech Lead ∥ UI Designer** design in parallel (technical design with stories and acceptance criteria; experience design with a screen inventory, design tokens, and a *real HTML mockup* written into the workspace for the Frontend Engineer to build to) → a **kickoff review "meeting"** where PM and QA critique the design before a line of code is written → **Frontend ∥ Backend Engineers** build story-by-story into a real workspace → an **automated boot check** (the build only counts if the product actually installs and starts) → **QA that runs the product** → a rework loop on "fix" → a **Documentation Engineer** documents what was *actually* built → the user ships. Every product leaves canonical docs on disk: `SPEC.md`, `DESIGN.md`, `DESIGN_UX.md`.
 
+```mermaid
+flowchart TB
+    Idea["Idea · one sentence from the user"] --> Spec["PM writes SPEC.md<br/>named target user + differentiation contract"]
+    Spec --> Gate{"Approve spec?<br/>(optional user gate)"}
+    Gate -->|approved| TL["Tech Lead · DESIGN.md<br/>stories + acceptance criteria"]
+    Gate -->|approved| UID["UI Designer · DESIGN_UX.md<br/>screen inventory, locked tokens,<br/>real HTML mockup"]
+    TL --> Kickoff["Kickoff review<br/>PM + QA post falsifiable objections<br/>against the design"]
+    UID --> Kickoff
+    Kickoff --> FE["Frontend Engineer<br/>builds story-by-story"]
+    Kickoff --> BE["Backend Engineer<br/>builds story-by-story"]
+    FE --> Boot["Boot check<br/>install + start, or the build failed"]
+    BE --> Boot
+    Boot --> QA["QA runs the product<br/>headless Chromium, per-criterion verdict,<br/>screenshots as evidence"]
+    QA -->|"fix"| Rework["Rework loop<br/>blockers → build briefs + lessons.md"]
+    Rework --> FE
+    QA -->|"ship"| Docs["Documentation Engineer<br/>documents what was actually built"]
+    Docs --> Ship["User ships"]
+```
+
+| The studio | A product mid-pipeline |
+|---|---|
+| ![](assets/product-studio/studio-dashboard.png) | ![](assets/product-studio/product-detail-pipeline.png) |
+
+*Left: the Product Studio dashboard — five products, each at a different pipeline stage (Build, Docs, Shipped), with "Your turn" flags where a user gate is waiting. Right: Mood Ring at stage 4 of 7, with the Backend Engineer's build deliverable — files, per-story acceptance evidence, and the smoke-check result — visible in full.*
+
 ### The thesis: harness structure over model size
 
 Product Studio runs on the same mid-tier local model as the rest of Fluid (MiniMax-M2.7 via the Hermes CLI). The design bet is that output quality is mostly a property of the *harness*, not the model: full context chains (every stage sees the applied output of every earlier stage), verification gates (boot check, per-criterion QA), small verified increments (story-by-story builds against acceptance criteria), and adversarial review (kickoff objections, QA verdicts). Give a mid-tier model a Claude-Code-grade harness and its output approaches frontier quality — that was the hypothesis, and the five-sprint arc below is what it took to make it true.
@@ -245,12 +270,22 @@ Product Studio runs on the same mid-tier local model as the rest of Fluid (MiniM
 4. **A real designer.** A seventh agent, the UI Designer, runs in parallel with the Tech Lead: screen inventory, empty/loading/error states, locked design tokens, and an actual HTML mockup the Frontend Engineer builds against — and QA audits the shipped UI against those locked tokens.
 5. **The kickoff review.** Before any build work is filed, PM (scope lens) and QA (testability-and-experience lens) each post structured objections against the design — every objection must be *falsifiable* and cite a spec or design line; taste-only objections are banned, and a clean approval is a valid outcome. Objections flow straight into the build briefs. A per-product `studioWeight` (`full` / `quick`) controls whether the ceremony runs.
 
+![UI Designer's HTML mockup for Mood Ring](assets/product-studio/mood-ring-mockup.png)
+
+*Not a description of a design — the design. The UI Designer writes a real, openable HTML mockup into the product workspace (here: Mood Ring's month-mosaic calendar, one colored cell per logged day), and the Frontend Engineer builds against it. QA later audits the shipped UI against the mockup's locked tokens.*
+
 ### Does it work? The evidence from live runs
 
 - A Pokemon mini-game shipped **first-pass** — and QA didn't just eyeball it: it statistically verified the wild-encounter rate over 300 trials.
 - QA caught a frontend/backend **response-shape mismatch with exact line numbers**, a **missing spec feature**, and an **accent-color drift** between the shipped CSS (`#7C3AED`) and the designer's locked token (`#E8846B`) — the kind of defect a "review the transcript" QA can never see, because it only exists in the built product.
 
 That last catch is the whole argument in one bug: the designer locked a token, the engineer drifted from it, and the only agent positioned to notice was the one *looking at the running app*. Verification has to touch the artifact, not the conversation about the artifact.
+
+| QA's own evidence: home screen | QA's own evidence: the guilt modal |
+|---|---|
+| ![](assets/product-studio/qa-home-idle.png) | ![](assets/product-studio/qa-guilt-modal.png) |
+
+*These two screenshots were taken by the QA agent itself, driving the shipped Pomodoro Focus app in its own sandboxed headless Chromium — not by me. It walks every screen and state (here: idle home, and the "gentle"-tone guilt modal after a skipped break), saves the evidence into `qa-screenshots/`, and attaches it to a per-criterion ship/fix verdict.*
 
 ---
 
