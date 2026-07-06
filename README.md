@@ -12,7 +12,7 @@ A Product Manager's portfolio project by [Christin Thomas](https://www.linkedin.
 
 ## TL;DR
 
-- **Two live modules on one runtime.** **Job Hunt** (3 agents covering a 5-stage pipeline) and **Study** (5 agents — 4 student-facing plus a background Curator — FSRS-6 spaced repetition, sync sessions and async Deep Dive). Same orchestration layer, same eval harness, same guardrails — different domain.
+- **Three live modules on one runtime.** **Job Hunt** (3 agents covering a 5-stage pipeline), **Study** (5 agents — 4 student-facing plus a background Curator — FSRS-6 spaced repetition, sync sessions and async Deep Dive), and **Product Studio** (a 7-agent product team that takes one idea to a shipped, working web app — with browser-based QA that actually runs what was built). Same orchestration layer, same eval harness, same guardrails — different domains.
 - **Built for trust, not demos.** A deterministic truth-grounding verifier blocks fabricated claims before they leave the app — on the screenshot below it clears 42 of 43 claims and correctly classifies the 43rd as an *honest gap*, not a lie. An evaluation harness scores every agent against per-role rubrics, with separate **graded** and **guardrail** (pass/fail) dimensions and N-iteration averaging so a lucky single run can't mask flaky behaviour.
 - **Model choice is an experiment, not a vibe.** A **Model A/B Lab** runs N `{provider, model}` candidates head-to-head against the incumbent on a fixed rubric, with a coverage-aware fairness contract, per-model cost + latency, and a one-click apply/revert of the winner. The first comparison kept Researcher on MiniMax-M2.7 over Hermes-3-405B on a measured 15-point edge.
 - **Hardened the way real products are.** After the first feature push I paused and gated new work behind a multi-sprint stabilization plan, then kept the discipline: **135 issues tracked, 89 fixed, every High- and Critical-severity defect closed** — atomic counters, optimistic concurrency, FIFO locks, SSRF guards, recovery hygiene, an OS-level timeout backstop that survives a starved event loop, and an observability layer over the agent runtime I don't own.
@@ -119,7 +119,7 @@ The "What Fluid has learned about your job-hunting taste" view is the strongest 
 
 The Study module shipped in a focused week and was the test of whether the platform thesis was real or marketing. Shared with Job Hunt: UI shell, sidebar, Home, agent runtime, profile/fact infrastructure, eval harness, meeting synthesizer, reliability primitives, on-disk Hermes profile management. Module-specific: schema, prompts, personas, pages, FSRS engine, automations.
 
-The Job Hunt-only Home was rewritten into a module-agnostic, content-forward shell (shared activity feed, per-module dashboard cards) so neither module is privileged. Study v2 went further — added a fifth "Curator" agent that ingests user material and open-web sources into a per-topic knowledge base, plus a guided on-ramp UI for students starting from zero. The same shell absorbed it cleanly.
+The Job Hunt-only Home was rewritten into a module-agnostic, content-forward shell (shared activity feed, per-module dashboard cards) so neither module is privileged. Study v2 went further — added a fifth "Curator" agent that ingests user material and open-web sources into a per-topic knowledge base, plus a guided on-ramp UI for students starting from zero. The same shell absorbed it cleanly. The third proof came later and was the most demanding: **Product Studio** (below) put a 7-agent software team on the same runtime — same issue/wakeup pattern, no new scheduler machinery — and it held.
 
 ---
 
@@ -229,6 +229,31 @@ Five agents — four student-facing and one background worker. The split between
 
 ---
 
+## Product Studio — a 7-agent product team, and a bet about harnesses
+
+The third module is the most ambitious test of the platform thesis: **Product Studio**, a full product team inside Fluid that takes one product idea to a shipped, working web app. Seven agents: a **Product Manager** writes the spec (with a named target user and a differentiation contract — no "a fun app for everyone" specs allowed) → an optional user **"Approve spec" gate** → **Tech Lead ∥ UI Designer** design in parallel (technical design with stories and acceptance criteria; experience design with a screen inventory, design tokens, and a *real HTML mockup* written into the workspace for the Frontend Engineer to build to) → a **kickoff review "meeting"** where PM and QA critique the design before a line of code is written → **Frontend ∥ Backend Engineers** build story-by-story into a real workspace → an **automated boot check** (the build only counts if the product actually installs and starts) → **QA that runs the product** → a rework loop on "fix" → a **Documentation Engineer** documents what was *actually* built → the user ships. Every product leaves canonical docs on disk: `SPEC.md`, `DESIGN.md`, `DESIGN_UX.md`.
+
+### The thesis: harness structure over model size
+
+Product Studio runs on the same mid-tier local model as the rest of Fluid (MiniMax-M2.7 via the Hermes CLI). The design bet is that output quality is mostly a property of the *harness*, not the model: full context chains (every stage sees the applied output of every earlier stage), verification gates (boot check, per-criterion QA), small verified increments (story-by-story builds against acceptance criteria), and adversarial review (kickoff objections, QA verdicts). Give a mid-tier model a Claude-Code-grade harness and its output approaches frontier quality — that was the hypothesis, and the five-sprint arc below is what it took to make it true.
+
+### Five sprints, each fixing what the last one exposed
+
+1. **Context starvation + the boot gate.** Early stages worked from a single truncated prior output; agents downstream were guessing. Sprint 1 rebuilt the context supply chain — every stage's brief now carries the newest applied output of *every* earlier stage — and added the boots-or-blocked gate: an automated smoke check installs and starts the product, and a build that doesn't boot is a failed build with the log handed to the retry, not a "done."
+2. **Cross-product memory + the spec gate.** Every QA "fix" verdict's blockers are distilled into a studio-wide `lessons.md` injected into future build and design briefs — the studio stops repeating a class of mistake after paying for it once. Plus per-role model overrides and the optional "Approve spec" user gate.
+3. **Eyes for QA.** QA stopped grading prose and started grading the product: an auto-deployed live preview plus a managed, sandboxed headless Chromium the agent drives — clicking through flows, screenshotting every screen into `qa-screenshots/`, and returning a per-criterion ship/fix verdict with evidence. Builds also became story-based against explicit acceptance criteria.
+4. **A real designer.** A seventh agent, the UI Designer, runs in parallel with the Tech Lead: screen inventory, empty/loading/error states, locked design tokens, and an actual HTML mockup the Frontend Engineer builds against — and QA audits the shipped UI against those locked tokens.
+5. **The kickoff review.** Before any build work is filed, PM (scope lens) and QA (testability-and-experience lens) each post structured objections against the design — every objection must be *falsifiable* and cite a spec or design line; taste-only objections are banned, and a clean approval is a valid outcome. Objections flow straight into the build briefs. A per-product `studioWeight` (`full` / `quick`) controls whether the ceremony runs.
+
+### Does it work? The evidence from live runs
+
+- A Pokemon mini-game shipped **first-pass** — and QA didn't just eyeball it: it statistically verified the wild-encounter rate over 300 trials.
+- QA caught a frontend/backend **response-shape mismatch with exact line numbers**, a **missing spec feature**, and an **accent-color drift** between the shipped CSS (`#7C3AED`) and the designer's locked token (`#E8846B`) — the kind of defect a "review the transcript" QA can never see, because it only exists in the built product.
+
+That last catch is the whole argument in one bug: the designer locked a token, the engineer drifted from it, and the only agent positioned to notice was the one *looking at the running app*. Verification has to touch the artifact, not the conversation about the artifact.
+
+---
+
 ## Reliability engineering — earning the right to ship features again
 
 After the first big feature push, dogfooding surfaced a class of failures that no amount of further features would have fixed. I gated new feature work behind a hardening plan and kept the discipline as the project grew: **135 issues tracked, 89 fixed, every High- and Critical-severity defect closed.** Every fix is a small, scoped commit with an issue ID — the backlog itself is the artifact.
@@ -291,6 +316,7 @@ The backlog also closed the unglamorous core: atomic `issueNumber` via a counter
 | Agent runtime | Hermes agents (local CLI) with per-agent profile directories under `~/.hermes/profiles/`; persona injection via per-profile `SOUL.md`; a Hermes Bridge seam for substrate checks, telemetry, and cost tracking |
 | Models | Job Hunt agents + background workers on `MiniMax-M2.7` (local `minimax`); Study interactive agents per-role on OpenRouter free tier (Tutor: Nemotron-3-Super-120B; Quiz Master: Arcee Trinity; Study Planner: DeepSeek-V4-Flash); per-agent override in `adapterConfig`; Model A/B Lab for head-to-head selection (`eval_ab_comparisons`, OpenRouter live pricing + LiteLLM fallback) |
 | Study-specific | FSRS-6 spaced repetition (`ts-fsrs`) with per-student weight optimization (Python subprocess); sync sessions over an awaited Hermes turn through a concurrency semaphore |
+| Product Studio-specific | Per-product workspace with canonical `SPEC.md` / `DESIGN.md` / `DESIGN_UX.md`; automated boot check (install + wait-for-port) gating every build; one-click local preview deploy; managed sandboxed headless Chromium (CDP) for browser-based QA; studio-wide `lessons.md` cross-run memory; per-product `studioWeight` (full/quick) |
 | Integrations | Gmail draft creation for outreach + follow-ups; iCalendar export for interviews; Chrome extension for one-click LinkedIn / Indeed / Wellfound capture |
 
 ---
